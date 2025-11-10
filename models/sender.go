@@ -34,22 +34,23 @@ const (
 )
 
 type Sender struct {
-	gorm.Model
-	ID                   uuid.UUID
-	Type                 SenderType
-	FirstName            string
-	LastName             string
-	BirthDate            time.Time
-	Gender               GenderType
-	IdentificationType   IdentificationType
-	IdentificationNumber string
-	IdentificationExpiry time.Time
-	CountryCode          string
-	Street               string
-	PostalCode           string
-	City                 string
-	Email                string
-	PhoneNumber          string
-	IPAddress            string
-	ExternalID           string
+    gorm.Model
+    ID                   uuid.UUID
+    Type                 SenderType
+    FirstName            string
+    LastName             string
+    BirthDate            time.Time
+    Gender               GenderType
+    IdentificationType   IdentificationType
+    IdentificationNumber string
+    IdentificationExpiry time.Time
+    CountryCode          string
+    Street               string
+    PostalCode           string
+    City                 string
+    Email                string
+    PhoneNumber          string 
+    IPAddress            string
+    ExternalID           string
 }
+

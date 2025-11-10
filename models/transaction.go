@@ -19,19 +19,20 @@ const (
 )
 
 type Transaction struct {
-	gorm.Model
-	ID                  uuid.UUID
-	CustomerID          uuid.UUID
-	SenderID            uuid.UUID
-	RecipientID         uuid.UUID
-	ReferenceID         uint32
-	Type                TransactionType
-	InputCurrencyCode   string
-	OutputCurrencyCode  string
-	OutputAmountInCents string
-	ExternalID          string
-	ExpiresAt           sql.NullTime
-	InvalidAt           sql.NullTime
+    gorm.Model
+    ID                  uuid.UUID
+    CustomerID          uuid.UUID
+    SenderID            uuid.UUID
+    RecipientID         uuid.UUID
+    ReferenceID         uint32
+    Type                TransactionType
+    InputCurrencyCode   string
+    OutputCurrencyCode  string
+    OutputAmountInCents string
+    ExternalID          string
+    ExpiresAt           sql.NullTime
+    InvalidAt           sql.NullTime
+    MobileProvider      string  
 }
 
 func (t *Transaction) GetReferenceForHumans() string {
