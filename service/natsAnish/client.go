@@ -1,46 +1,86 @@
-package client
+package natsAnish
 
 import (
+    "encoding/json"
     "fmt"
     "log"
     "github.com/nats-io/nats.go"
-    "mpesa" // Assuming this is the M-Pesa API integration package
+    "weriKana/models"                    // Import models for database interaction
+    "gorm.io/gorm"
 )
 
-func ListenForWithdrawals() {
+// NATS connection variable
+var nc *nats.Conn
+
+// ListenForWithdrawals listens for withdrawal messages on the "withdrawals" subject in NATS
+func ListenForWithdrawals(db *gorm.DB, nc *nats.Conn) {
+    var err error
+
     // Connect to NATS
-    nc, err := nats.Connect(nats.DefaultURL)
+    nc, err = nats.Connect(nats.DefaultURL)
     if err != nil {
-        log.Fatal(err)
+        log.Fatal("Failed to connect to NATS: ", err)
     }
     defer nc.Close()
 
-    // Subscribe to the "withdrawals" channel
+    // Subscribe to the "withdrawals" subject
     _, err = nc.Subscribe("withdrawals", func(msg *nats.Msg) {
-        fmt.Printf("Received withdrawal message: %s\n", string(msg.Data))
+        log.Printf("Received withdrawal message: %s\n", string(msg.Data))
 
-        // Process the withdrawal and interact with M-Pesa API
-        processWithdrawal(string(msg.Data))
+        // Parse the withdrawal request from the message
+        var request map[string]interface{}
+        if err := json.Unmarshal(msg.Data, &request); err != nil {
+            log.Printf("Failed to parse withdrawal message: %v", err)
+            return
+        }
+
+        // Send the message to another program or service for processing the withdrawal
+        // For example, we could use an HTTP request, another NATS subject, or a different queue
+        err := forwardToProcessingService(request)
+        if err != nil {
+            log.Printf("Failed to forward message for processing: %v", err)
+        }
+
+        // Acknowledge the message after forwarding
+        ackMessage(msg)
     })
+
     if err != nil {
-        log.Fatal(err)
+        log.Fatal("Failed to subscribe to 'withdrawals': ", err)
     }
 
-    // Keep listening
+    // Keep listening indefinitely
     select {}
 }
 
-// Process the withdrawal message and call M-Pesa API to initiate payment
-func processWithdrawal(message string) {
-    // For the sake of this example, let's assume the message contains the amount and recipient info
-    fmt.Println("Processing withdrawal:", message)
+// forwardToProcessingService sends the withdrawal data to another service for processing
+func forwardToProcessingService(request map[string]interface{}) error {
+    // Here we could forward the withdrawal to another NATS topic, HTTP endpoint, or any other service
+    // For example, if you're using HTTP to forward:
+    //  - You can send a POST request with the withdrawal data to another server.
 
-    // Call M-Pesa API to send money to the recipient
-    // In reality, you'd extract the required details from the message and pass them to the M-Pesa API
-    mpesaResponse, err := mpesa.InitiatePayment("5000", "recipientPhoneNumber")
-    if err != nil {
-        log.Fatalf("Failed to process M-Pesa payment: %v", err)
-    }
+    // In this example, we'll just log it as a placeholder for actual forwarding logic.
+    log.Printf("Forwarding withdrawal request for processing: %v", request)
 
-    fmt.Printf("M-Pesa payment initiated successfully. Status: %s\n", mpesaResponse.StatusMessage)
+    // Example HTTP forwarding logic (for another service to process)
+    // Replace this with the actual forwarding logic
+    // Example (sending to HTTP endpoint)
+    // resp, err := http.Post("http://another-service/withdrawals", "application/json", json.NewEncoder(request))
+    // if err != nil {
+    //     return fmt.Errorf("failed to forward withdrawal request: %w", err)
+    // }
+    // defer resp.Body.Close()
+
+    return nil
 }
+
+// ackMessage acknowledges the NATS message after processing
+func ackMessage(msg *nats.Msg) {
+    // Acknowledge the message to remove it from the queue
+    if err := msg.Ack(); err != nil {
+        log.Printf("Failed to acknowledge message: %v", err)
+    } else {
+        fmt.Println("Message acknowledged.")
+    }
+}
+

@@ -1,3 +1,5 @@
+package handlers
+
 // api/handlers/fake-topup.go
 func FakeTopup(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

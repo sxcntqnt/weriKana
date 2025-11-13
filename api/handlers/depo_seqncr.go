@@ -1,13 +1,13 @@
 // services/mpesa_depo_sequence.go
-package services
+package handlers
 
 import (
 	"encoding/json"
 	"log"
 	"time"
 
-	"werikana/models"
-	"werikana/services/mpesa"
+	"weriKana/models"
+	"weriKana/service/mpesa"
 
 	"github.com/nats-io/nats.go"
 	"gorm.io/gorm"

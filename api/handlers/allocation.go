@@ -1,5 +1,5 @@
 // allocation.go (core allocation + batch transfer logic)
-package cashdist
+package handlers
 
 import (
     "context"

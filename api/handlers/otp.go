@@ -1,3 +1,5 @@
+package handlers
+
 // api/handlers/otp.go
 func RequestWithdrawOTP(db *gorm.DB, otpSvc *otp.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

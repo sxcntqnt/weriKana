@@ -1,31 +1,20 @@
 package db
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"crypto/sha256"
-	"database/sql"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
-	"io"
-	"log"
-	"os"
-
-	_ "github.com/mattn/go-sqlite3"
-	"golang.org/x/crypto/bcrypt"
-        "gorm.io/gorm"
-
+    "gorm.io/gorm"
 )
 
 type TransactionsRepo interface {
+    // Define repository methods here, for example:
+    // CreateTransaction(transaction *models.Transaction) error
 }
 
 type transactionsRepo struct {
-	db *gorm.DB
+    db *gorm.DB
 }
 
+// NewTransactionsRepo returns a new TransactionsRepo instance
 func NewTransactionsRepo(db *gorm.DB) *transactionsRepo {
-	return &transactionsRepo{db: db}
+    return &transactionsRepo{db: db}
 }
+

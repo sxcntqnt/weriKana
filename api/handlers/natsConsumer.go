@@ -1,10 +1,10 @@
-package consumer
+package handlers
 
 import (
     "fmt"
     "log"
     "github.com/nats-io/nats.go"
-    "mpesa" // Assuming this is the M-Pesa API integration package
+    "weriKana/service/mpesa" 
 )
 
 func ListenForWithdrawals() {
