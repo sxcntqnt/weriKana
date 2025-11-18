@@ -3,6 +3,7 @@ package models
 import (
 	"database/sql/driver"
 	"encoding/json"
+        "github.com/google/uuid"
 )
 
 // JSONMap is a convenience type for GORM JSON columns
@@ -25,6 +26,17 @@ func (j JSONMap) Value() (driver.Value, error) {
 	return json.Marshal(j)
 }
 
+type AllocationResult struct {
+    BookieID       uuid.UUID
+    BookieName     string
+    MpesaNumber    string
+    AmountToSend   int64 // cents
+    Proportion     float64
+    IsReal         bool
+    IdempotencyKey string
+    TransactionID  uuid.UUID
+}
+
 // ------------------------------------------------------------
 // WithdrawalItem and SecureWithdrawalEnvelope for NATS
 type WithdrawalItem struct {
@@ -43,3 +55,13 @@ type SecureWithdrawalEnvelope struct {
 	Idempotency   string           `msgpack:"d"`
 	Signature     []byte           `msgpack:"S"` // Ed25519 over all fields except this one
 }
+
+// Define the possible transaction statuses
+type TransactionStatus string
+const (
+    StatusPending   TransactionStatus = "pending"
+    StatusInitiated TransactionStatus = "initiated"
+    StatusCompleted TransactionStatus = "completed"
+    StatusFailed    TransactionStatus = "failed"
+    StatusSuccess   TransactionStatus = "success"  // Added StatusSuccess
+)

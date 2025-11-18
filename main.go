@@ -134,7 +134,7 @@ func (a *App) Start() error {
     // Start background consumers
     go mpesa.StartStkSequenceConsumer(a.DB, a.NATS)
     go handlers.StartStkSequenceConsumer(a.DB, a.NATS) // From handlers/natsConsumer.go
-    go handlers.ListenForWithdrawals(a.DB, a.NATS, a.Crypto) // Updated to pass Crypto
+    go handlers.ListenForWithdrawals(a.DB, a.NATS) // Updated to pass Crypto
     go handlers.StartExecutionEngine(a.DB, a.NATS)
 
     // Setup routes

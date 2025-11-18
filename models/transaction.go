@@ -15,13 +15,6 @@ const (
 	TransactionTypeTrade    TransactionType = "trade"
 )
 
-type TransactionStatus string
-
-const (
-	StatusPending TransactionStatus = "pending"
-	StatusSuccess TransactionStatus = "success"
-	StatusFailed  TransactionStatus = "failed"
-)
 
 type Transaction struct {
 	gorm.Model
@@ -33,6 +26,7 @@ type Transaction struct {
 	CryptoAccountID uuid.UUID         `gorm:"type:uuid;index"`
 	CustomerID      uuid.UUID         `gorm:"type:uuid;index;not null"`
 	SenderID        uuid.UUID         `gorm:"type:uuid;index"`
+        BookieAccountID uuid.UUID      `gorm:"type:uuid"`
 	Reference       string            `gorm:"size:50;uniqueIndex"`
 	Type            TransactionType   `gorm:"not null"`
 	AmountCents     int64             `gorm:"type:bigint;not null"`

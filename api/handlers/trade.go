@@ -9,6 +9,9 @@ import (
     "weriKana/models"
 )
 
+// In any file that uses JSONMap (like trade.go)
+type JSONMap map[string]interface{}
+
 // PlaceTrade handles placing a trade, updating account and profile
 func PlaceTrade(db *gorm.DB) fiber.Handler {
     return func(c *fiber.Ctx) error {

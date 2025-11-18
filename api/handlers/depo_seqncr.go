@@ -2,57 +2,59 @@
 package handlers
 
 import (
-	"encoding/json"
-	"log"
-	"time"
+        "encoding/json"
+        "log"
+        "time"
 
-	"weriKana/models"
-	"weriKana/service/mpesa"
+        "weriKana/models"
+        "weriKana/service/mpesa"
 
-	"github.com/nats-io/nats.go"
-	"gorm.io/gorm"
+        "github.com/nats-io/nats.go"
+        "github.com/google/uuid"
+        "gorm.io/gorm"
 )
 
 type StkSequencePayload struct {
-	ParentRef    string            `json:"parent_ref"`
-	Phone        string            `json:"phone"`
-	TotalCents   int64             `json:"total_cents"`
-	Allocations  []AllocationResult `json:"allocations"`
-	CustomerID   uuid.UUID         `json:"customer_id"`
+        ParentRef    string            `json:"parent_ref"`
+        Phone        string            `json:"phone"`
+        TotalCents   int64             `json:"total_cents"`
+        Allocations  []models.AllocationResult `json:"allocations"`
+        CustomerID   uuid.UUID         `json:"customer_id"`
 }
 
 func StartStkSequenceConsumer(db *gorm.DB, nc *nats.Conn) {
-	nc.Subscribe("mpesa.stk.sequence", func(m *nats.Msg) {
-		var payload StkSequencePayload
-		if err := json.Unmarshal(m.Data, &payload); err != nil {
-			log.Printf("invalid payload: %v", err)
-			return
-		}
+        nc.Subscribe("mpesa.stk.sequence", func(m *nats.Msg) {
+                var payload StkSequencePayload
+                if err := json.Unmarshal(m.Data, &payload); err != nil {
+                        log.Printf("invalid payload: %v", err)
+                        return
+                }
 
-		// Sequential STK Push
-		for i, a := range payload.Allocations {
-			time.Sleep(2 * time.Second) // avoid rate limits
+                // Sequential STK Push
+                for _, a := range payload.Allocations { // _ ignores the index i
+                        time.Sleep(2 * time.Second) // avoid rate limits
 
-			resp, err := mpesa.SendSTKPush(a.MpesaNumber, a.AmountToSend, a.IdempotencyKey)
-			if err != nil {
-				updateTxStatus(db, a.TransactionID, models.StatusFailed, err.Error())
-				continue
-			}
+                        resp, err := mpesa.SendSTKPush(a.MpesaNumber, a.AmountToSend, a.IdempotencyKey)
+                        if err != nil {
+                                updateTxStatus(db, a.TransactionID, models.StatusFailed, err.Error())
+                                continue
+                        }
 
-			updateTxStatus(db, a.TransactionID, models.StatusInitiated, resp.CheckoutRequestID)
-		}
+                        updateTxStatus(db, a.TransactionID, models.StatusInitiated, resp.CheckoutRequestID)
+                }
 
-		m.Ack()
-	})
+                m.Ack()
+        })
 }
 
 func updateTxStatus(db *gorm.DB, txID uuid.UUID, status models.TransactionStatus, meta string) {
-	db.Model(&models.Transaction{}).Where("id = ?", txID).
-		Updates(map[string]any{
-			"status": status,
-			"metadata": models.JSONMap{
-				"third_party_ref": meta,
-				"updated_at":      time.Now(),
-			},
-		})
+        db.Model(&models.Transaction{}).Where("id = ?", txID).
+                Updates(map[string]any{
+                        "status": status,
+                        "metadata": models.JSONMap{
+                                "third_party_ref": meta,
+                                "updated_at":      time.Now(),
+                        },
+                })
 }
+

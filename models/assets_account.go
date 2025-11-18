@@ -8,25 +8,32 @@ import (
 )
 
 type SportsAccount struct {
-	ID               uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	CustomerID       uuid.UUID      `gorm:"type:uuid;index;uniqueIndex:idx_customer_bookie;not null"`
-	BookieID         uuid.UUID      `gorm:"type:uuid;index;uniqueIndex:idx_customer_bookie;not null"`
-	ManagerID        uuid.UUID      `gorm:"type:uuid;index;not null"` // Links to SportsManager
-	MpesaNumber      string         `gorm:"size:20"`
-	RealBalanceCents int64          `gorm:"default:0"`
-	FakeBalanceCents int64          `gorm:"default:0"`
-	BonusCents       int64          `gorm:"default:0"`
-	Currency         string         `gorm:"size:3;default:'KES'"`
-	IsActive         bool           `gorm:"default:true"`
-	EncryptedKey     string         `gorm:"type:text"` // AES-GCM encrypted session key
-	BetHistory       JSONMap        `gorm:"type:jsonb"` // e.g., {"bets": [{"match": "EPL", "amount": 1000}]}
-	// Relationships
-	Bookie           Bookie         `gorm:"foreignKey:BookieID"`
-	Customer         Customer       `gorm:"foreignKey:CustomerID"`
-	Transactions     []Transaction  `gorm:"foreignKey:SportsAccountID"`
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	DeletedAt        gorm.DeletedAt `gorm:"index"`
+    ID               uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+    CustomerID       uuid.UUID `gorm:"type:uuid;index;uniqueIndex:idx_customer_bookie;not null"`
+    BookieID         uuid.UUID `gorm:"type:uuid;index;uniqueIndex:idx_customer_bookie;not null"`
+    ManagerID        uuid.UUID `gorm:"type:uuid;index;not null"`
+    MpesaNumber      string    `gorm:"size:20"`
+    RealBalanceCents int64     `gorm:"default:0"`
+    FakeBalanceCents int64     `gorm:"default:0"`
+    BonusCents       int64     `gorm:"default:0"`
+    Currency         string    `gorm:"size:3;default:'KES'"`
+    IsActive         bool      `gorm:"default:true"`
+    EncryptedKey     string    `gorm:"type:text"`
+
+    // === ADD THESE 4 FIELDS ===
+    EWMALogReturn    float64   `gorm:"default:0"`      // EWMA of log returns
+    EWMAVolatility   float64   `gorm:"default:0"`      // EWMA volatility (annualized)
+    SharpeRatio      float64   `gorm:"default:0"`      // Optional: precomputed Sharpe
+    LastUpdatedPerf  time.Time `gorm:"default:now()"`
+
+    BetHistory       JSONMap   `gorm:"type:jsonb"`
+    Bookie           Bookie    `gorm:"foreignKey:BookieID"`
+    Customer         Customer  `gorm:"foreignKey:CustomerID"`
+    Transactions     []Transaction `gorm:"foreignKey:SportsAccountID"`
+
+    CreatedAt time.Time
+    UpdatedAt time.Time
+    DeletedAt gorm.DeletedAt `gorm:"index"`
 }
 
 func (SportsAccount) TableName() string {

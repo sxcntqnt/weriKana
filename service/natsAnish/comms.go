@@ -1,49 +1,90 @@
 package natsAnish
 
 import (
-    "fmt"
-    "log"
-    "os"
+	"log"
+	"os"
+	"time"
+	"fmt"
 
-    "github.com/nats-io/nats.go"
-    "github.com/vmihailenco/msgpack/v5" // Import msgpack package for encoding/decoding
-    "github.com/google/uuid"            // Import uuid package
+	"github.com/google/uuid"
+	"github.com/nats-io/nats.go"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
+// NATS Connection Management
 var NC *nats.Conn
 
-// UUID wrapper type to implement Marshaler/Unmarshaler interfaces
+func InitNATS() {
+	url := os.Getenv("NATS_URL")
+	if url == "" {
+		url = nats.DefaultURL
+	}
+
+	var err error
+	NC, err = nats.Connect(url)
+	if err != nil {
+		log.Fatalf("Failed to connect to NATS: %v", err)
+	}
+
+	log.Println("✅ Connected to NATS:", url)
+}
+
+func CloseNATS() {
+	if NC != nil {
+		NC.Close()
+	}
+}
+
+// Message Structures
 type UUID uuid.UUID
 
-// MarshalMsgpack implements msgpack.Marshaler interface for UUID
 func (u UUID) MarshalMsgpack() ([]byte, error) {
-    return uuid.UUID(u).MarshalBinary()
+	return uuid.UUID(u).MarshalBinary()
 }
 
-// UnmarshalMsgpack implements msgpack.Unmarshaler interface for UUID
 func (u *UUID) UnmarshalMsgpack(data []byte) error {
-    return (*uuid.UUID)(u).UnmarshalBinary(data)
+	return (*uuid.UUID)(u).UnmarshalBinary(data)
 }
 
-// Initialize NATS connection and register UUID type with msgpack
+type TransactionLeg struct {
+	AccountID     uuid.UUID `msgpack:"account_id"`
+	ProviderName  string    `msgpack:"provider_name"`
+	AmountCents   int64     `msgpack:"amount_cents"`
+	EncryptedKey  string    `msgpack:"encrypted_key"`
+	OTP           string    `msgpack:"otp"`
+	TransactionID uuid.UUID `msgpack:"transaction_id"`
+}
+
+type ExecutionMessage struct {
+	Type           string          `msgpack:"type"`
+	ParentRef      string          `msgpack:"parent_ref"`
+	CustomerID     uuid.UUID       `msgpack:"customer_id"`
+	TotalCents     int64           `msgpack:"total_cents"`
+	IsReal         bool            `msgpack:"is_real"`
+	Transactions   []TransactionLeg `msgpack:"transactions"`
+	RequestedAt    time.Time       `msgpack:"requested_at"`
+	IdempotencyKey string          `msgpack:"idempotency_key"`
+}
+
+func EncodeMsg(msg *ExecutionMessage) ([]byte, error) {
+	return msgpack.Marshal(msg)
+}
+
+func DecodeMsg(data []byte) (*ExecutionMessage, error) {
+	var msg ExecutionMessage
+	if err := msgpack.Unmarshal(data, &msg); err != nil {
+		return nil, err
+	}
+	return &msg, nil
+}
+
 func init() {
-    url := os.Getenv("NATS_URL")
-    if url == "" {
-        url = "nats://localhost:4222"
-    }
-
-    var err error
-    NC, err = nats.Connect(url)
-    if err != nil {
-        log.Fatal("NATS connect failed:", err)
-    }
-
-    // Register the UUID type with msgpack to use custom serialization
-    msgpack.RegisterExt(0, (*UUID)(nil))
+	msgpack.RegisterExt(0, (*UUID)(nil))
 }
 
-// Publish sends data to a NATS subject
 func Publish(subject string, data []byte) error {
+    if NC == nil {
+        return fmt.Errorf("NATS connection not initialized")
+    }
     return NC.Publish(subject, data)
 }
-
