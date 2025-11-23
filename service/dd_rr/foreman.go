@@ -11,13 +11,10 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"weriKana/models"
+        "weriKana/service/keystore"
 	"weriKana/service/natsAnish"
 	"weriKana/service/otp" // ← now uses the new Service
 )
-
-type KeyStore interface {
-	Verify(customerID, payload string, signature []byte) bool
-}
 
 type SmartWithdrawRequest struct {
 	CustomerID string `json:"customer_id"`
@@ -33,8 +30,7 @@ func balanceSportsAccount(acct models.SportsAccount, isReal bool) int64 {
 	}
 	return acct.FakeBalanceCents
 }
-
-func SmartWithdraw(db *gorm.DB, keyStore KeyStore, otpSvc *otp.Service) http.HandlerFunc {
+func SmartWithdraw(db *gorm.DB, keyStore keystore.KeyStore, otpSvc *otp.Service) http.HandlerFunc {
         return func(w http.ResponseWriter, r *http.Request) {
                 var req SmartWithdrawRequest
                 if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

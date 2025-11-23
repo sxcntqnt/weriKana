@@ -4,9 +4,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
-	"io"
-	"log"
+        "io"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -21,7 +19,7 @@ import (
 
 func SmartWithdraw(db *gorm.DB, keyStore *keystore.KeyStore, nc any) fiber.Handler {
 	// This reuses your EXACT dd_rr handler — perfect reuse, zero duplication
-	realHandler := dd_rr.SmartWithdraw(db, keyStore, otp.GetService())
+	realHandler := dd_rr.SmartWithdraw(db, *keyStore, otp.GetService())
 
 	return func(c *fiber.Ctx) error {
 		customerID := c.Locals("user_id").(uuid.UUID)

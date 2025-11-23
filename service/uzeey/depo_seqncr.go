@@ -1,5 +1,5 @@
 // services/mpesa_depo_sequence.go
-package handlers
+package uzeey
 
 import (
         "encoding/json"

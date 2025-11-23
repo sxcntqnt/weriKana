@@ -45,22 +45,19 @@ type B2CResponse struct {
     ResponseCode      string `json:"response_code"`
 }
 
-// SendSTKPush - for Smart Deposit
-func SendSTKPush(phone string, amountCents int64, idempotencyKey string) (*STKPushResponse, error) {
-    if baseURL == "" {
-        return nil, fmt.Errorf("MPESA_DJANGO_API_URL not set")
-    }
 
+// SendSTKPush — uses the config set by Init()
+func SendSTKPush(phone string, amountCents int64, idempotencyKey string) (*STKPushResponse, error) {
     reqBody := STKPushRequest{
         Phone:         phone,
-        Amount:        amountCents / 100, // API expects KES (shillings)
+        Amount:        amountCents / 100,
         AccountRef:    "BANKROLL_SMART_DEPOSIT",
         TransactionID: idempotencyKey,
-        CallbackURL:   os.Getenv("MPESA_STK_CALLBACK_URL"),
+        CallbackURL:   config.STKCallbackURL, // ← uses internal config
     }
 
     data, _ := json.Marshal(reqBody)
-    url := fmt.Sprintf("%s/lipanampesa/online/", baseURL)
+    url := fmt.Sprintf("%s/lipanampesa/online/", config.BaseURL)
 
     resp, err := doRequest("POST", url, data)
     if err != nil {
@@ -69,26 +66,24 @@ func SendSTKPush(phone string, amountCents int64, idempotencyKey string) (*STKPu
     defer resp.Body.Close()
 
     var result STKPushResponse
-    json.NewDecoder(resp.Body).Decode(&result)
+    if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+        return nil, err
+    }
     return &result, nil
 }
 
-// SendB2C - for Smart Withdraw
+// SendB2C
 func SendB2C(phone string, amountCents int64, idempotencyKey string) (*B2CResponse, error) {
-    if baseURL == "" {
-        return nil, fmt.Errorf("MPESA_DJANGO_API_URL not set")
-    }
-
     reqBody := B2CRequest{
         Phone:         phone,
-        Amount:        amountCents / 100, // API expects KES (shillings)
+        Amount:        amountCents / 100,
         CommandID:     "BusinessPayment",
         Remarks:       "BankRoll Smart Withdraw",
         TransactionID: idempotencyKey,
     }
 
     data, _ := json.Marshal(reqBody)
-    url := fmt.Sprintf("%s/b2c/transaction/", baseURL)
+    url := fmt.Sprintf("%s/b2c/transaction/", config.BaseURL)
 
     resp, err := doRequest("POST", url, data)
     if err != nil {
@@ -97,26 +92,27 @@ func SendB2C(phone string, amountCents int64, idempotencyKey string) (*B2CRespon
     defer resp.Body.Close()
 
     var result B2CResponse
-    json.NewDecoder(resp.Body).Decode(&result)
+    if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+        return nil, err
+    }
     return &result, nil
 }
 
-// doRequest makes HTTP requests to the M-Pesa API with error handling
+// doRequest — uses config.HTTPClient and config.APIToken
 func doRequest(method, url string, body []byte) (*http.Response, error) {
     req, _ := http.NewRequest(method, url, bytes.NewBuffer(body))
     req.Header.Set("Content-Type", "application/json")
-    if apiToken != "" {
-        req.Header.Set("Authorization", "Bearer "+apiToken)
+    if config.APIToken != "" {
+        req.Header.Set("Authorization", "Bearer "+config.APIToken)
     }
 
-    resp, err := httpClient.Do(req)
+    resp, err := config.HTTPClient.Do(req)
     if err != nil {
         return nil, err
     }
     if resp.StatusCode >= 400 {
         b, _ := io.ReadAll(resp.Body)
-        return nil, fmt.Errorf("MPesa API error %d: %s", resp.StatusCode, string(b))
+        return nil, fmt.Errorf("M-Pesa API error %d: %s", resp.StatusCode, string(b))
     }
     return resp, nil
 }
-

@@ -90,3 +90,52 @@ func decrypt(ciphertextB64 string) (string, error) {
     return string(plaintext), nil
 }
 
+// BalanceUpdater lets you add real/fake money in a type-safe way across all account types
+type BalanceUpdater interface {
+    AddReal(cents int64)
+    AddFake(cents int64)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SportsAccount
+// ─────────────────────────────────────────────────────────────────────────────
+func (a *SportsAccount) AddReal(cents int64) {
+    a.RealBalanceCents += cents
+}
+
+func (a *SportsAccount) AddFake(cents int64) {
+    a.FakeBalanceCents += cents
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// StockAccount
+// ─────────────────────────────────────────────────────────────────────────────
+func (a *StockAccount) AddReal(cents int64) {
+    a.RealBalanceCents += cents
+}
+
+func (a *StockAccount) AddFake(cents int64) {
+    a.FakeBalanceCents += cents
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ForexAccount
+// ─────────────────────────────────────────────────────────────────────────────
+func (a *ForexAccount) AddReal(cents int64) {
+    a.RealBalanceCents += cents
+}
+
+func (a *ForexAccount) AddFake(cents int64) {
+    a.FakeBalanceCents += cents
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CryptoAccount
+// ─────────────────────────────────────────────────────────────────────────────
+func (a *CryptoAccount) AddReal(cents int64) {
+    a.RealBalanceCents += cents
+}
+
+func (a *CryptoAccount) AddFake(cents int64) {
+    a.FakeBalanceCents += cents
+}

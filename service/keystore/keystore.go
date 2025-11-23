@@ -4,6 +4,7 @@ package keystore
 import (
 	"context"
 	"crypto/rsa"
+        "crypto"
 	"encoding/base64"
 	"fmt"
 	"math/big"
@@ -211,3 +212,33 @@ func (ks *KeyStore) GetVaultSecret(path, key string) (string, error) {
 	secretCache.values[cacheKey] = value
 	return value, nil
 }
+
+// Verify the signature of a request, using the provided public key and payload
+func (ks *KeyStore) Verify(customerID string, payload string, signature []byte) bool {
+    // Fetch the public key for the Keycloak user (or from the JWKS)
+    certs, err := ks.fetchOrRefreshCerts(context.Background())
+    if err != nil {
+        fmt.Printf("Error fetching certs: %v\n", err)
+        return false
+    }
+
+    // Find the correct public key based on the signature header (or other relevant data)
+    for _, key := range *certs.Keys {
+        rsaKey, err := jwkToRSA(key)
+        if err != nil {
+            fmt.Printf("Error converting JWK to RSA: %v\n", err)
+            continue
+        }
+
+        // Verify the signature using the public key
+        err = rsa.VerifyPKCS1v15(rsaKey, crypto.SHA256, []byte(payload), signature)
+        if err == nil {
+            // Signature is valid
+            return true
+        }
+    }
+
+    // Signature verification failed
+    return false
+}
+

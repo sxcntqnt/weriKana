@@ -1,3 +1,4 @@
+// service/dd_rr/crypto.go
 package dd_rr
 
 import (
@@ -5,148 +6,114 @@ import (
     "crypto/cipher"
     "crypto/ed25519"
     "crypto/rand"
-    "crypto/sha256"
-    "encoding/pem"
-    "fmt"
+    "crypto/sha512"
     "io"
+    "log"
+    "fmt"
 
     "golang.org/x/crypto/hkdf"
+    "weriKana/db"
 )
 
-// CryptoEngine holds our private key and the engine's public key (for OTP encryption)
+// CryptoEngine — now derived entirely from the master key
 type CryptoEngine struct {
-    PrivKey     ed25519.PrivateKey // 64 bytes
-    EnginePub   ed25519.PublicKey  // 32 bytes (used as AES key – pre-shared securely)
-    EnginePubX  []byte             // optional X25519 public for PFS
+    SigningKey ed25519.PrivateKey // 64 bytes — signs withdrawal requests
+    AesKey     []byte             // 32 bytes — shared AES-256-GCM key (pre-shared with engine)
 }
 
-// NewCryptoEngine loads PEM-encoded keys
-func NewCryptoEngine(ourPrivPEM, enginePubPEM []byte) (*CryptoEngine, error) {
-    priv, err := pemToEd25519Private(ourPrivPEM)
-    if err != nil {
-        return nil, err
-    }
-    pub, err := pemToEd25519Public(enginePubPEM)
-    if err != nil {
-        return nil, err
-    }
-    return &CryptoEngine{PrivKey: priv, EnginePub: pub}, nil
+// Global singleton — initialized once at startup
+var Engine *CryptoEngine
+
+// InitCryptoEngine — call this ONCE in main.go
+func InitCryptoEngine() {
+    masterKey := db.LoadOrGenerateMasterKey() // ← your 32-byte root key
+    Engine = deriveFromMasterKey(masterKey)
+    log.Println("CryptoEngine initialized from master key (Ed25519 + AES-256-GCM)")
 }
 
-// Sign creates an Ed25519 signature over the exact msgpack bytes (excluding the signature field)
+// deriveFromMasterKey uses HKDF-SHA512 to split the 32-byte master key into two secure 32-byte keys
+func deriveFromMasterKey(masterKey []byte) *CryptoEngine {
+    if len(masterKey) != 32 {
+        log.Fatalf("Master key must be 32 bytes, got %d", len(masterKey))
+    }
+
+    hkdf := hkdf.New(sha512.New, masterKey, nil, []byte("weriKana-withdrawal-engine-v1"))
+
+    signingSeed := make([]byte, 32) // Ed25519 seed
+    aesKey := make([]byte, 32)      // AES-256 key
+
+    if _, err := io.ReadFull(hkdf, signingSeed); err != nil {
+        log.Fatalf("HKDF failed (signing seed): %v", err)
+    }
+    if _, err := io.ReadFull(hkdf, aesKey); err != nil {
+        log.Fatalf("HKDF failed (AES key): %v", err)
+    }
+
+    // Ed25519 private key from 32-byte seed
+    signingKey := ed25519.NewKeyFromSeed(signingSeed)
+
+    return &CryptoEngine{
+        SigningKey: signingKey,
+        AesKey:     aesKey,
+    }
+}
+
+// PublicKey returns the engine's public key (send to trusted clients once)
+func (c *CryptoEngine) PublicKey() ed25519.PublicKey {
+    return c.SigningKey.Public().(ed25519.PublicKey)
+}
+
+// Sign a withdrawal payload (msgpack bytes)
 func (c *CryptoEngine) Sign(data []byte) []byte {
-    return ed25519.Sign(c.PrivKey, data)
+    return ed25519.Sign(c.SigningKey, data)
 }
 
-// Verify checks an Ed25519 signature
+// Verify a signature using the engine's public key
 func Verify(pub ed25519.PublicKey, data, sig []byte) bool {
     return ed25519.Verify(pub, data, sig)
 }
 
-// EncryptOTP encrypts the OTP so **only** the execution engine can read it.
-// Uses the engine's public key as the AES-256 key (must be pre-shared via secure channel).
+// EncryptOTP — encrypts OTP so only the execution engine can read it
 func (c *CryptoEngine) EncryptOTP(otp string) (nonce, ciphertext []byte, err error) {
     nonce = make([]byte, 12)
     if _, err = rand.Read(nonce); err != nil {
-        return
+        return nil, nil, err
     }
-    block, err := aes.NewCipher(c.EnginePub) // 32-byte key
+
+    block, err := aes.NewCipher(c.AesKey)
     if err != nil {
-        return
+        return nil, nil, err
     }
+
     aesgcm, err := cipher.NewGCM(block)
     if err != nil {
-        return
+        return nil, nil, err
     }
+
     ciphertext = aesgcm.Seal(nil, nonce, []byte(otp), nil)
-    return
+    return nonce, ciphertext, nil
 }
 
-// DecryptOTP (engine side)
-func DecryptOTP(enginePrivKey, nonce, ciphertext []byte) (string, error) {
-    // Derive AES key from engine's private key? Simpler: use same pre-shared pub as key.
-    // In production you would derive via HKDF from a shared secret.
-    block, err := aes.NewCipher(enginePrivKey[:32])
+// DecryptOTP — used by the execution engine (same key!)
+func DecryptOTP(nonce, ciphertext []byte) (string, error) {
+    if Engine == nil {
+        return "", fmt.Errorf("crypto engine not initialized")
+    }
+
+    block, err := aes.NewCipher(Engine.AesKey)
     if err != nil {
         return "", err
     }
+
     aesgcm, err := cipher.NewGCM(block)
     if err != nil {
         return "", err
     }
+
     plain, err := aesgcm.Open(nil, nonce, ciphertext, nil)
     if err != nil {
         return "", err
     }
+
     return string(plain), nil
 }
-
-// ------------------------------------------------------------
-// Optional PFS version (X25519 + HKDF)
-
-// EncryptOTPWithPFS uses an ephemeral X25519 keypair and PFS to encrypt the OTP
-func (c *CryptoEngine) EncryptOTPWithPFS(otp string) (epub, nonce, ciphertext []byte, err error) {
-    // Generate ephemeral X25519 keypair
-    var priv [32]byte
-    if _, err = rand.Read(priv[:]); err != nil {
-        return
-    }
-    epubB := x25519ScalarMultBase(priv[:])
-    epub = epubB[:]
-
-    // Shared secret
-    shared := x25519Shared(priv[:], c.EnginePubX)
-
-    // Derive AES key
-    key := hkdfExpand(shared, []byte("secure-withdrawal-otp-v1"), 32)
-
-    nonce = make([]byte, 12)
-    if _, err = rand.Read(nonce); err != nil {
-        return
-    }
-    block, _ := aes.NewCipher(key)
-    gcm, _ := cipher.NewGCM(block)
-    ciphertext = gcm.Seal(nil, nonce, []byte(otp), nil)
-    return
-}
-
-// Helper: HKDF-SHA256 expand
-func hkdfExpand(secret, info []byte, length int) []byte {
-    h := hkdf.New(sha256.New, secret, nil, info)
-    out := make([]byte, length)
-    io.ReadFull(h, out)
-    return out
-}
-
-// PEM helpers
-func pemToEd25519Private(pemBytes []byte) (ed25519.PrivateKey, error) {
-    block, _ := pem.Decode(pemBytes)
-    if block == nil || block.Type != "PRIVATE KEY" {
-        return nil, fmt.Errorf("invalid PEM")
-    }
-    return ed25519.PrivateKey(block.Bytes), nil
-}
-
-func pemToEd25519Public(pemBytes []byte) (ed25519.PublicKey, error) {
-    block, _ := pem.Decode(pemBytes)
-    if block == nil || block.Type != "PUBLIC KEY" {
-        return nil, fmt.Errorf("invalid PEM")
-    }
-    return ed25519.PublicKey(block.Bytes), nil
-}
-
-// ------------------------------------------------------------
-// Optional X25519 helpers for Perfect Forward Secrecy (PFS)
-
-func x25519ScalarMultBase(priv []byte) [32]byte {
-    // Perform the scalar multiplication with the base point and return the public key.
-    var result [32]byte
-    // The scalar multiplication code will be here
-    return result
-}
-
-func x25519Shared(priv, pub []byte) []byte {
-    // Derive the shared secret using X25519 Diffie-Hellman
-    return []byte{}
-}
-

@@ -30,6 +30,7 @@ type SportsAccount struct {
     Bookie           Bookie    `gorm:"foreignKey:BookieID"`
     Customer         Customer  `gorm:"foreignKey:CustomerID"`
     Transactions     []Transaction `gorm:"foreignKey:SportsAccountID"`
+    TradeHistory     JSONMap    `json:"trade_history"`
 
     CreatedAt time.Time
     UpdatedAt time.Time

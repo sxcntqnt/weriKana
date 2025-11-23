@@ -17,14 +17,13 @@ type ScrapingResult struct {
 }
 
 // StartExecutionConsumer starts the NATS consumer for transaction processing
-func StartExecutionConsumer(db *gorm.DB) {
-	_, err := NC.Subscribe("bets.cashout.withdraw", func(m *nats.Msg) {
+func StartExecutionConsumer(db *gorm.DB, nc *nats.Conn) {
+	_, err := nc.Subscribe("bets.cashout.withdraw", func(m *nats.Msg) {
 		msg, err := DecodeMsg(m.Data)
 		if err != nil {
 			log.Printf("Failed to decode message: %v", err)
 			return
 		}
-
 		for _, leg := range msg.Transactions {
 			go func(leg TransactionLeg) {
 				key, err := decrypt(leg.EncryptedKey)
@@ -35,7 +34,6 @@ func StartExecutionConsumer(db *gorm.DB) {
 					}
 					return
 				}
-
 				result := executeScraping(key, leg.OTP, leg.AmountCents)
 				if result.Success {
 					if err := updateTx(db, leg.TransactionID.String(), string(models.StatusSuccess), result.Receipt); err != nil {
@@ -48,7 +46,6 @@ func StartExecutionConsumer(db *gorm.DB) {
 				}
 			}(leg)
 		}
-
 		if err := m.Ack(); err != nil {
 			log.Printf("Failed to acknowledge message: %v", err)
 		}

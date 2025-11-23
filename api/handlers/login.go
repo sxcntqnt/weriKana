@@ -1,33 +1,32 @@
 // api/handlers/login.go
+// Final Version — 2025 Elite Edition
+// Includes: httpOnly refresh token + secure cookie settings
 package handlers
 
 import (
 	"context"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"weriKana/service/keystore"
 )
 
 type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username string `json:"username"` // phone number
+	Password string `json:"password"` // OTP
 }
 
 type LoginResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int    `json:"expires_in"`
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int    `json:"expires_in"`
 }
 
-// KeycloakLogin — uses client secret stored in Vault
+// KeycloakLogin — THE GOLD STANDARD (2025)
 func KeycloakLogin(ks *keystore.KeyStore) fiber.Handler {
-	const clientID = "werikana-api" // your confidential client in Keycloak
-
-	// Path inside Vault where you store the secret, e.g.:
-	// vault kv put secret/data/werikana keycloak_client_secret=super-secret-123
+	const clientID = "werikana-api"
 	const vaultSecretPath = "secret/data/werikana"
-	const vaultSecretKey  = "keycloak_client_secret"
+	const vaultSecretKey = "keycloak_client_secret"
 
 	return func(c *fiber.Ctx) error {
 		var req LoginRequest
@@ -38,24 +37,42 @@ func KeycloakLogin(ks *keystore.KeyStore) fiber.Handler {
 			return c.Status(400).JSON(fiber.Map{"error": "username and password required"})
 		}
 
-		// === Read client secret from Vault (cached in memory after first read) ===
-		secret, err := ks.GetVaultSecret(vaultSecretPath, vaultSecretKey)
+		// 1. Get client secret from Vault (cached forever in RAM)
+		clientSecret, err := ks.GetVaultSecret(vaultSecretPath, vaultSecretKey)
 		if err != nil {
-			// Don't leak Vault errors to the client
-			return c.Status(500).JSON(fiber.Map{"error": "Internal authentication error"})
+			return c.Status(500).JSON(fiber.Map{"error": "Authentication service unavailable"})
 		}
 
-		// === Perform Keycloak login ===
-		token, err := ks.Login(context.Background(), clientID, secret, req.Username, req.Password)
+		// 2. Exchange OTP for real Keycloak tokens
+		token, err := ks.Keycloak.Login(
+			context.Background(),
+			clientID,
+			clientSecret,
+			ks.Realm,
+			req.Username,
+			req.Password,
+		)
 		if err != nil {
-			return c.Status(401).JSON(fiber.Map{"error": "Invalid username or password"})
+			// Don't leak details — Keycloak already logged it
+			return c.Status(401).JSON(fiber.Map{"error": "Invalid credentials or OTP expired"})
 		}
 
+		// 3. Set refresh token as httpOnly, Secure, Strict cookie
+		c.Cookie(&fiber.Cookie{
+			Name:     "refresh_token",
+			Value:    token.RefreshToken,
+			Path:     "/",                                 // Available everywhere (or "/auth/refresh" if you prefer)
+			Expires:  time.Now().Add(30 * 24 * time.Hour), // 30 days — standard
+			Secure:   true,                                // HTTPS only
+			HTTPOnly: true,                                // JS cannot touch it
+			SameSite: "strict",                            // Best anti-CSRF protection
+		})
+
+		// 4. Return only the short-lived access token
 		return c.JSON(LoginResponse{
-			AccessToken:  token.AccessToken,
-			RefreshToken: token.RefreshToken,
-			TokenType:    "bearer",
-			ExpiresIn:    token.ExpiresIn,
+			AccessToken: token.AccessToken,
+			TokenType:   "bearer",
+			ExpiresIn:   token.ExpiresIn,
 		})
 	}
 }

@@ -1,9 +1,8 @@
 package mpesa
 
 import (
-    "encoding/json"
     "log"
-    "net/http"
+    "github.com/gofiber/fiber/v2" // Import the Fiber package
     "weriKana/models"
     "gorm.io/gorm"
 )
@@ -25,39 +24,37 @@ type STKCallback struct {
     } `json:"Body"`
 }
 
-// STKCallbackHandler handles M-Pesa callback and processes transaction updates
-func STKCallbackHandler(db *gorm.DB) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
+// STKCallbackHandler — internal handler (adapted for GoFiber)
+func STKCallbackHandler(db *gorm.DB) fiber.Handler {
+    return func(c *fiber.Ctx) error {
         var cb STKCallback
-        err := json.NewDecoder(r.Body).Decode(&cb)
-        if err != nil {
-            http.Error(w, "Invalid request body", http.StatusBadRequest)
-            log.Printf("Failed to decode callback: %v", err)
-            return
+        if err := c.BodyParser(&cb); err != nil {
+            log.Printf("M-Pesa callback decode error: %v", err)
+            return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+                "error": "Invalid JSON",
+            })
         }
 
-        // Extract CheckoutRequestID and ResultCode from the callback
         chkID := cb.Body.StkCallback.CheckoutRequestID
         resultCode := cb.Body.StkCallback.ResultCode
 
-        // Find the corresponding transaction
         var tx models.Transaction
         if err := db.Where("metadata->>'third_party_ref' = ?", chkID).First(&tx).Error; err != nil {
-            http.Error(w, "Transaction not found", http.StatusNotFound)
-            log.Printf("Transaction not found for CheckoutRequestID: %s", chkID)
-            return
+            log.Printf("No tx for CheckoutRequestID: %s", chkID)
+            return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+                "error": "Tx not found",
+            })
         }
 
-        // Process success or failure based on ResultCode
-        if resultCode == "0" { // Success
-            var acct models.SportsAccount // Replace with the correct account type (e.g., SportsAccount)
+        if resultCode == "0" {
+            var acct models.SportsAccount
             if err := db.First(&acct, tx.SportsAccountID).Error; err != nil {
-                http.Error(w, "Sports account not found", http.StatusNotFound)
-                log.Printf("Sports account not found for transaction ID: %s", tx.ID)
-                return
+                log.Printf("Account not found: %v", err)
+                return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+                    "error": "Account error",
+                })
             }
 
-            // Update the account balance and transaction status
             db.Model(&acct).Update("real_balance_cents", gorm.Expr("real_balance_cents + ?", tx.AmountCents))
             db.Model(&tx).Updates(map[string]any{
                 "status": models.StatusSuccess,
@@ -66,24 +63,27 @@ func STKCallbackHandler(db *gorm.DB) http.HandlerFunc {
                     "final_status":  "credited",
                 },
             })
-            log.Printf("Transaction %s successfully credited.", tx.ID)
-        } else { // Failure
+            log.Printf("Deposit successful → TxID: %s | Amount: %d", tx.ID, tx.AmountCents)
+        } else {
             db.Model(&tx).Update("status", models.StatusFailed)
-            log.Printf("Transaction %s failed with ResultCode: %s", tx.ID, resultCode)
+            log.Printf("Deposit failed → TxID: %s | Code: %s", tx.ID, resultCode)
         }
 
-        // Respond back to M-Pesa
-        w.WriteHeader(http.StatusOK)
-        w.Write([]byte(`{"status":"received"}`))
+        return c.Status(fiber.StatusOK).JSON(fiber.Map{
+            "status": "received",
+        })
     }
 }
 
-// extractReceipt looks for the MpesaReceiptNumber in the callback and returns it
+// Helper function to extract the MpesaReceiptNumber from the callback metadata
 func extractReceipt(cb STKCallback) string {
     for _, item := range cb.Body.StkCallback.CallbackMetadata.Item {
         if item.Name == "MpesaReceiptNumber" {
-            return item.Value.(string)
+            if s, ok := item.Value.(string); ok {
+                return s
+            }
         }
     }
     return ""
 }
+

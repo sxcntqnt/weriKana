@@ -1,51 +1,61 @@
 package routes
 
 import (
-    "github.com/gofiber/fiber/v2"
-    "github.com/nats-io/nats.go"
     "weriKana/api/handlers"
     "weriKana/middleware"
-    "weriKana/service/dd_rr"
-    "gorm.io/gorm"
+    "weriKana/service/mpesa"
+    "weriKana/internal/appcontext"
+    "weriKana/service/uzeey"
 )
 
-// SetupRoutes configures the API routes for the Fiber app
-func SetupRoutes(app *fiber.App, db *gorm.DB, secretKey string, keyStore *handlers.KeyStore, otpSvc *handlers.OTPService, nc *nats.Conn, crypto *securewithdrawal.CryptoEngine) {
-    // API group version 1
+func SetupRoutes(ctx *appcontext.AppContext) {
+    app := ctx.App
+    db := ctx.DB
+    keyStore := ctx.KeyStore
+    otpSvc := ctx.OTPSvc
+    nc := ctx.NATS
+    balanceEngine := ctx.BalanceEngine
+
     v1 := app.Group("/api/v1")
 
-    // Public routes (no JWT required)
-    v1.Post("/token", handlers.Login(db, secretKey))                      // Login to get JWT
-    v1.Post("/withdraw/otp", handlers.RequestWithdrawOTP(db, otpSvc))     // Request OTP for withdrawal
-    // In your routes file
-    v1.Post("/login", handlers.KeycloakLogin(app.KeyStore))
+    // ====================== PUBLIC ROUTES ======================
+    v1.Post("/login", handlers.KeycloakLogin(keyStore))
+    v1.Post("/withdraw/otp", handlers.RequestWithdrawOTP(db, otpSvc))
+    v1.Post("/otp/request", handlers.RequestWithdrawOTP(db, otpSvc)) // if you want both endpoints
+    v1.Post("/otp/verify", handlers.VerifyOTP(otpSvc))
+    v1.Post("/mpesa/stk-callback", mpesa.STKCallbackHandler(db))
 
-    // In routes.SetupRoutes
-    v1.Post("/otp/request", handlers.RequestWithdrawOTP(app.DB, app.OTPSvc))
-    v1.Post("/otp/verify", handlers.VerifyOTP(app.OTPSvc))
+    // ====================== PROTECTED ROUTES ======================
+    authorized := v1.Group("/", middleware.KeycloakAuth(keyStore))
 
-    // Authorized routes (require JWT)
-    authorized := v1.Group("/", middleware.AuthMiddleware(secretKey))
+    // Account
+    authorized.Get("/account", handlers.GetAccount(db))
+    authorized.Post("/account/fake-topup", handlers.FakeTopup(db))
 
-    // Account-related routes
-    authorized.Get("/account", handlers.GetAccount(db))                   // Get account details
-    authorized.Post("/account/smart-deposit", handlers.SmartDeposit(db, nc)) // Smart deposit
-    authorized.Post("/withdraw/smart", securewithdrawal.SmartWithdraw(app.DB, app.Crypto, app.OTPSvc))
-    // In routes.SetupRoutes
-    authorized.Post("/deposit/account", handlers.AccountDeposit(app.DB))
-    authorized.Post("/deposit/smart", handlers.SmartDeposit(app.DB, app.NATS))
-    authorized.Post("/account/trade", handlers.PlaceTrade(db))            // Place a trade
-    authorized.Post("/account/fake-topup", handlers.FakeTopup(db))        // Fake balance top-up
+    // ====================== Balance Routes ======================
+    // You need to instantiate BalanceHandler with balanceEngine
+    balanceHandler := handlers.NewBalanceHandler(balanceEngine)
 
-    // Asset and Nexus-related routes
-    authorized.Get("/asset-nexus", handlers.GetAssetNexus(db))            // Get asset nexus data
-    authorized.Get("/sharp-profile", handlers.GetSharpProfile(db))        // Get sharp profile data
+    // Customer routes
+    authorized.Get("/me", balanceHandler.GetMyBalance)
 
-    // Smart deposit and withdraw routes
-    authorized.Post("/account/smart-deposit", handlers.SmartDeposit(db)) // Smart deposit
-    authorized.Post("/account/smart-withdraw", handlers.SmartWithdraw(db, keyStore, crypto)) // Smart withdraw with CryptoEngine
+    // Admin routes
+    authorized.Get("/balances", balanceHandler.AdminGetAllBalances)
+    authorized.Get("/balance-engine/metrics", balanceHandler.GetBalanceEngineMetrics)
 
-    // Start NATS consumer for MPESA STK sequence (background task)
-    go handlers.StartStkSequenceConsumer(db, nc)
+    // ====================== Deposits ======================
+    authorized.Post("/deposit/account", handlers.AccountDeposit(db))
+    authorized.Post("/deposit/smart", handlers.SmartDeposit(db, nc))
+    authorized.Post("/account/smart-deposit", handlers.SmartDeposit(db, nc)) // you had this twice
+
+    // ====================== Withdrawals ======================
+    authorized.Post("/account/smart-withdraw", handlers.SmartWithdraw(db, keyStore, otpSvc))
+
+    // ====================== Assets & Profile ======================
+    authorized.Get("/asset-nexus", handlers.GetAssetNexus(db))
+    authorized.Get("/sharp-profile", handlers.GetSharpProfile(db))
+
+    // Start background NATS consumer
+    go uzeey.StartStkSequenceConsumer(db, nc)
 }
 
