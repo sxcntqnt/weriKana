@@ -8,7 +8,7 @@ import (
 )
 
 type SportsManager struct {
-	ID              uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	ID              uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Brand           string    `gorm:"size:255;default:'SharpsBet'"`
 	SupportedLeagues JSONMap   `gorm:"type:jsonb;default:'{\"leagues\":[]}'"`
 	CreatedAt       time.Time
@@ -17,7 +17,7 @@ type SportsManager struct {
 }
 
 type StockManager struct {
-	ID               uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	ID               uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Brand            string    `gorm:"size:255;default:'SharpsTrade'"`
 	SupportedMarkets JSONMap   `gorm:"type:jsonb;default:'{\"tickers\":[]}'"`
 	CreatedAt        time.Time
@@ -26,7 +26,7 @@ type StockManager struct {
 }
 
 type ForexManager struct {
-	ID             uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	ID             uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Brand          string    `gorm:"size:255;default:'SharpsFX'"`
 	SupportedPairs JSONMap   `gorm:"type:jsonb;default:'{\"pairs\":[]}'"`
 	CreatedAt      time.Time
@@ -35,7 +35,7 @@ type ForexManager struct {
 }
 
 type CryptoManager struct {
-	ID              uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	ID              uuid.UUID `gorm:"type:uuid;primaryKey"`
 	Brand           string    `gorm:"size:255;default:'SharpsCrypto'"`
 	SupportedCoins  JSONMap   `gorm:"type:jsonb;default:'{\"coins\":[]}'"`
 	CreatedAt       time.Time

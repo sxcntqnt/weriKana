@@ -9,7 +9,7 @@ import (
 
 type SportsBank struct {
 	gorm.Model
-	ID          uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	ID          uuid.UUID      `gorm:"type:uuid;primaryKey"`
 	Code        string         `gorm:"size:10;uniqueIndex;not null"` // e.g., "SPORTSBC"
 	SwiftCode   string         `gorm:"size:11;index"`
 	CountryCode string         `gorm:"size:2;index;default:'KE'"`
@@ -25,7 +25,7 @@ type SportsBank struct {
 // models/stock_bank.go
 type StockBank struct {
 	gorm.Model
-	ID          uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	ID          uuid.UUID      `gorm:"type:uuid;primaryKey"`
 	Code        string         `gorm:"size:10;uniqueIndex;not null"` // e.g., "STOCKBC"
 	SwiftCode   string         `gorm:"size:11;index"`
 	CountryCode string         `gorm:"size:2;index;default:'KE'"`
@@ -41,7 +41,7 @@ type StockBank struct {
 // models/forex_bank.go
 type ForexBank struct {
 	gorm.Model
-	ID          uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	ID          uuid.UUID      `gorm:"type:uuid;primaryKey"`
 	Code        string         `gorm:"size:10;uniqueIndex;not null"` // e.g., "FOREXBC"
 	SwiftCode   string         `gorm:"size:11;index"`
 	CountryCode string         `gorm:"size:2;index;default:'KE'"`
@@ -57,7 +57,7 @@ type ForexBank struct {
 // models/crypto_bank.go
 type CryptoBank struct {
 	gorm.Model
-	ID          uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	ID          uuid.UUID      `gorm:"type:uuid;primaryKey"`
 	Code        string         `gorm:"size:10;uniqueIndex;not null"` // e.g., "CRYPTOBC"
 	SwiftCode   string         `gorm:"size:11;index"`
 	CountryCode string         `gorm:"size:2;index;default:'KE'"`

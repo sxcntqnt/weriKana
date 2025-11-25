@@ -6,7 +6,7 @@ import (
 	"gorm.io/gorm"
 )
 type Bookie struct {
-    ID        uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+    ID        uuid.UUID      `gorm:"type:uuid;primaryKey"`
     Name      string         `gorm:"size:255;not null"`
     MpesaNumber    string
     MinDeposit     int64 // KES in cents (or smallest unit you use)
