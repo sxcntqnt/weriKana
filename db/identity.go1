@@ -1,0 +1,145 @@
+To incorporate saving and loading identities from Vault, you'll want to integrate logic that checks if an identity already exists before generating and saving a new one. Here’s an updated approach that includes both saving the identity to Vault and loading it as needed.
+
+## Updated Code Structure
+
+### Steps
+1. **Check for existing identity in Vault.**
+2. **If it exists, load it.**
+3. **If it doesn’t exist, generate a new identity and save it to Vault.**
+
+### Example Code
+
+Here’s how you can implement this logic:
+
+```go
+package main
+
+import (
+    "crypto/hmac"
+    "crypto/rand"
+    "crypto/sha256"
+    "encoding/base64"
+    "fmt"
+    "github.com/hashicorp/vault/api"
+    "golang.org/x/crypto/curve25519"
+    "os"
+)
+
+// Assume MasterKey holds your master key
+var MasterKey []byte
+
+type IdentityKey struct {
+    Private [32]byte
+    Public  [32]byte
+}
+
+// SaveIdentity saves the identity to Vault
+func SaveIdentity(identity IdentityKey) error {
+    vaultAddr := os.Getenv("VAULT_ADDR")
+    if vaultAddr == "" {
+        return fmt.Errorf("VAULT_ADDR not set")
+    }
+
+    client, err := api.NewClient(&api.Config{Address: vaultAddr})
+    if err != nil {
+        return err
+    }
+
+    client.SetToken(os.Getenv("VAULT_TOKEN"))
+
+    identityData := map[string]interface{}{
+        "private": base64.StdEncoding.EncodeToString(identity.Private[:]),
+        "public":  base64.StdEncoding.EncodeToString(identity.Public[:]),
+    }
+
+    _, err = client.Logical().Write("secret/data/werikana/identity", identityData)
+    return err
+}
+
+// LoadIdentity loads the identity from Vault
+func LoadIdentity() (IdentityKey, error) {
+    vaultAddr := os.Getenv("VAULT_ADDR")
+    if vaultAddr == "" {
+        return IdentityKey{}, fmt.Errorf("VAULT_ADDR not set")
+    }
+
+    client, err := api.NewClient(&api.Config{Address: vaultAddr})
+    if err != nil {
+        return IdentityKey{}, err
+    }
+
+    client.SetToken(os.Getenv("VAULT_TOKEN"))
+
+    secret, err := client.Logical().Read("secret/data/werikana/identity")
+    if err != nil {
+        return IdentityKey{}, err
+    }
+
+    data, ok := secret.Data["data"].(map[string]interface{})
+    if !ok {
+        return IdentityKey{}, fmt.Errorf("invalid data format")
+    }
+
+    var identity IdentityKey
+    privateKeyBase64, _ := data["private"].(string)
+    publicKeyBase64, _ := data["public"].(string)
+
+    identity.Private, _ = base64.StdEncoding.DecodeString(privateKeyBase64)
+    identity.Public, _ = base64.StdEncoding.DecodeString(publicKeyBase64)
+
+    return identity, nil
+}
+
+// DeriveIdentity derives an identity from the master key.
+func DeriveIdentity(masterKey []byte) (IdentityKey, error) {
+    derivedKey := hkdf(masterKey, "identity-key")
+    publicKey, privateKey, err := generateKeyPair(derivedKey)
+    if err != nil {
+        return IdentityKey{}, err
+    }
+
+    var identity IdentityKey
+    copy(identity.Private[:], privateKey)
+    copy(identity.Public[:], publicKey)
+
+    return identity, nil
+}
+
+// hkdf function to derive a key
+func hkdf(masterKey []byte, info string) []byte {
+    prk := sha256.Sum256(masterKey)
+    hkdf := hmac.New(sha256.New, prk[:])
+    hkdf.Write([]byte(info))
+    return hkdf.Sum(nil)
+}
+
+// generateKeyPair generates a public/private key pair using X25519
+func generateKeyPair(derivedKey []byte) ([]byte, []byte, error) {
+    privateKey := make([]byte, 32)
+    _, err := rand.Read(privateKey)
+    if err != nil {
+        return nil, nil, err
+    }
+
+    publicKey, err := curve25519.X25519(privateKey, curve25519.Basepoint)
+    if err != nil {
+        return nil, nil, err
+    }
+
+    return publicKey, privateKey, nil
+}
+
+// LoadOrGenerateIdentity either loads an identity from Vault or generates a new one if none exists
+func LoadOrGenerateIdentity() (IdentityKey, error) {
+    identity, err := LoadIdentity()
+    if err != nil {
+        log.Println("No valid identity found — generating new one...")
+        identity, err = DeriveIdentity(MasterKey)
+        if err != nil {
+            return IdentityKey{}, err
+        }
+        if err := SaveIdentity(identity); err != nil {
+            return IdentityKey{}, fmt.Errorf("failed to save identity: %v", err)
+        }
+        log.Println("New identity generated and saved to Vault.")
+    }
