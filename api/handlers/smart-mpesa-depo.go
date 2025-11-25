@@ -14,7 +14,7 @@ import (
 )
 
 type DepositRequest struct {
-	CustomerID  uuid.UUID `json:"customer_id,omitempty"`
+	sharpID  uuid.UUID `json:"sharp_id,omitempty"`
 	Phone       string    `json:"phone"`
 	AmountCents int64     `json:"amount_cents"`
 	IsReal      bool      `json:"is_real"`
@@ -26,7 +26,7 @@ type DepositRequest struct {
 // 1. SmartDeposit — the quant-powered beast
 func SmartDeposit(db *gorm.DB, nc *nats.Conn) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		customerID := c.Locals("user_id").(uuid.UUID)
+		sharpID := c.Locals("user_id").(uuid.UUID)
 
 		var req DepositRequest
 		if err := c.BodyParser(&req); err != nil {
@@ -41,7 +41,7 @@ func SmartDeposit(db *gorm.DB, nc *nats.Conn) fiber.Handler {
 
 		var accounts []models.SportsAccount
 		if err := db.Preload("Bookie").
-			Where("customer_id = ? AND is_active = ?", customerID, true).
+			Where("sharp_id = ? AND is_active = ?", sharpID, true).
 			Find(&accounts).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": "Failed to load accounts"})
 		}
@@ -101,7 +101,7 @@ func SmartDeposit(db *gorm.DB, nc *nats.Conn) fiber.Handler {
 				"parent_ref":  parentRef,
 			}
 
-			tx, err := BaseDeposit(db, customerID, "bookie", alloc.BookieID, alloc.AmountToSend, req.IsReal, metadata, parentRef, alloc.BookieID)
+			tx, err := BaseDeposit(db, sharpID, "bookie", alloc.BookieID, alloc.AmountToSend, req.IsReal, metadata, parentRef, alloc.BookieID)
 			if err != nil {
 				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 			}
@@ -125,7 +125,7 @@ func SmartDeposit(db *gorm.DB, nc *nats.Conn) fiber.Handler {
 				"phone":        req.Phone,
 				"total_cents":  req.AmountCents,
 				"allocations":  results,
-				"customer_id":  customerID,
+				"sharp_id":  sharpID,
 				"algorithm":    "risk_perf_weighted_v2",
 				"beta":         beta,
 				"timestamp":     time.Now().UTC(),
@@ -161,7 +161,7 @@ func SmartDeposit(db *gorm.DB, nc *nats.Conn) fiber.Handler {
 // 2. AccountDeposit — single account deposits (sharp, stock, etc.)
 func AccountDeposit(db *gorm.DB) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		customerID := c.Locals("user_id").(uuid.UUID)
+		sharpID := c.Locals("user_id").(uuid.UUID)
 		accountType := c.Locals("account_type").(string)
 
 		var req DepositRequest
@@ -176,7 +176,7 @@ func AccountDeposit(db *gorm.DB) fiber.Handler {
 		switch accountType {
 		case "sharp":
 			var acc models.SharpAccount
-			if err := db.Select("id").First(&acc, "customer_id = ?", customerID).Error; err != nil {
+			if err := db.Select("id").First(&acc, "sharp_id = ?", sharpID).Error; err != nil {
 				return c.Status(404).JSON(fiber.Map{"error": "Account not found"})
 			}
 			accountID = acc.ID
@@ -185,7 +185,7 @@ func AccountDeposit(db *gorm.DB) fiber.Handler {
 		}
 
 		ref := "DEP-" + uuid.New().String()[:8]
-		tx, err := BaseDeposit(db, customerID, accountType, accountID, req.AmountCents, req.IsReal, models.JSONMap{}, ref, uuid.Nil)
+		tx, err := BaseDeposit(db, sharpID, accountType, accountID, req.AmountCents, req.IsReal, models.JSONMap{}, ref, uuid.Nil)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -204,7 +204,7 @@ func AccountDeposit(db *gorm.DB) fiber.Handler {
 // 3. BaseDeposit — shared core logic
 func BaseDeposit(
 	db *gorm.DB,
-	customerID uuid.UUID,
+	sharpID uuid.UUID,
 	accountType string,
 	accountID uuid.UUID,
 	amountCents int64,
@@ -216,7 +216,7 @@ func BaseDeposit(
 
 	tx := models.Transaction{
 		ID:              uuid.New(),
-		CustomerID:      customerID,
+		SharpID:         sharpID,
 		Type:            models.TransactionTypeDeposit,
 		AmountCents:     amountCents,
 		IsReal:          isReal,
@@ -231,7 +231,7 @@ func BaseDeposit(
 	switch accountType {
 	case "sharp":
 		var acc models.SharpAccount
-		err = db.First(&acc, "id = ? AND customer_id = ?", accountID, customerID).Error
+		err = db.First(&acc, "id = ? AND sharp_id = ?", accountID, sharpID).Error
 		if err != nil {
 			return nil, fmt.Errorf("sharp account not found")
 		}
@@ -249,7 +249,7 @@ func BaseDeposit(
 
 	case "bookie":
 		var acc models.SportsAccount
-		err = db.First(&acc, "id = ? AND customer_id = ?", accountID, customerID).Error
+		err = db.First(&acc, "id = ? AND sharp_id = ?", accountID, sharpID).Error
 		if err != nil {
 			return nil, fmt.Errorf("bookie account not found")
 		}

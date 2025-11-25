@@ -36,7 +36,7 @@ type ctxKey string
 
 const (
 	AccountKey  ctxKey = "account"  // value will be one of the *Account types
-	CustomerKey ctxKey = "customer" // value is *models.Customer
+	SharpKey ctxKey = "sharp" // value is *models.Sharp
 )
 
 // ——— Account (polymorphic – can hold SportsAccount, StockAccount, etc.) ———
@@ -52,13 +52,13 @@ func AccountFrom(ctx context.Context) any {
 }
 
 // ——— Customer ———
-func WithCustomer(ctx context.Context, c *models.Customer) context.Context {
-	return context.WithValue(ctx, CustomerKey, c)
+func WithCustomer(ctx context.Context, c *models.Sharp) context.Context {
+	return context.WithValue(ctx, SharpKey, c)
 }
 
-func CustomerFrom(ctx context.Context) *models.Customer {
-	if v := ctx.Value(CustomerKey); v != nil {
-		if cust, ok := v.(*models.Customer); ok {
+func CustomerFrom(ctx context.Context) *models.Sharp {
+	if v := ctx.Value(SharpKey); v != nil {
+		if cust, ok := v.(*models.Sharp); ok {
 			return cust
 		}
 	}

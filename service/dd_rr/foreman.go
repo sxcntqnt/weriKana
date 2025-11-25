@@ -17,7 +17,7 @@ import (
 )
 
 type SmartWithdrawRequest struct {
-	CustomerID string `json:"customer_id"`
+	SharpID string `json:"sharp_id"`
 	OTP        string `json:"otp"`
 	Amount     int64  `json:"amount"`
 	Signature  []byte `json:"signature"`
@@ -42,24 +42,24 @@ func SmartWithdraw(db *gorm.DB, keyStore keystore.KeyStore, otpSvc *otp.Service)
                         return
                 }
 
-                customerID, err := uuid.Parse(req.CustomerID)
+                sharpID, err := uuid.Parse(req.SharpID)
                 if err != nil {
-                        http.Error(w, "invalid customer_id", http.StatusBadRequest)
+                        http.Error(w, "invalid sharp_id", http.StatusBadRequest)
                         return
                 }
 
                 // 1. Verify OTP — using the new Service
-                if !otpSvc.Verify(customerID, req.OTP) {
+                if !otpSvc.Verify(sharpID, req.OTP) {
                         http.Error(w, "invalid or expired OTP", http.StatusUnauthorized)
                         return
                 }
 
                 // Invalidate OTP after successful use (one-time use!)
-                otpSvc.Invalidate(customerID)
+                otpSvc.Invalidate(sharpID)
 
                 // 2. Verify signature
-                signaturePayload := fmt.Sprintf("%s:%s:%d", req.CustomerID, req.OTP, req.Amount)
-                if !keyStore.Verify(req.CustomerID, signaturePayload, req.Signature) {
+                signaturePayload := fmt.Sprintf("%s:%s:%d", req.SharpID, req.OTP, req.Amount)
+                if !keyStore.Verify(req.SharpID, signaturePayload, req.Signature) {
                         http.Error(w, "invalid signature", http.StatusUnauthorized)
                         return
                 }
@@ -67,9 +67,9 @@ func SmartWithdraw(db *gorm.DB, keyStore keystore.KeyStore, otpSvc *otp.Service)
                 // --- Rest of your logic stays 100% the same ---
                 var accounts []models.SportsAccount
                 if err := db.Preload("Bookie").
-                        Where("customer_id = ? AND is_active = ?", customerID, true).
+                        Where("sharp_id = ? AND is_active = ?", sharpID, true).
                         Find(&accounts).Error; err != nil {
-                        log.Printf("Failed to load accounts for customer %s: %v", customerID, err)
+                        log.Printf("Failed to load accounts for customer %s: %v", sharpID, err)
                         http.Error(w, "failed to load accounts", http.StatusInternalServerError)
                         return
                 }
@@ -116,7 +116,7 @@ func SmartWithdraw(db *gorm.DB, keyStore keystore.KeyStore, otpSvc *otp.Service)
                         txn := models.Transaction{
                                 ID:              uuid.New(),
                                 SportsAccountID: acct.ID,
-                                CustomerID:      customerID,
+ 				SharpID:         sharpID, 
                                 Type:            models.TransactionTypeWithdraw,
                                 AmountCents:     -amountToWithdraw,
                                 IsReal:          req.IsReal,
@@ -155,7 +155,7 @@ func SmartWithdraw(db *gorm.DB, keyStore keystore.KeyStore, otpSvc *otp.Service)
                 // Publish to NATS
                 payload := map[string]interface{}{
                         "parent_ref":    parentRef,
-                        "customer_id":   customerID,
+                        "sharp_id":   sharpID,
                         "total_cents":   float64(req.Amount),
                         "is_real":       req.IsReal,
                         "withdrawals":   withdrawals,
@@ -178,12 +178,12 @@ func SmartWithdraw(db *gorm.DB, keyStore keystore.KeyStore, otpSvc *otp.Service)
         }
 }
 // service/securewithdrawal/foreman.go — ADD THIS FUNCTION
-func ProcessSmartWithdraw(db *gorm.DB, customerID uuid.UUID, req SmartWithdrawRequest) (parentRef string, totalPot int64, withdrawals []map[string]interface{}, err error) {
+func ProcessSmartWithdraw(db *gorm.DB, sharpID uuid.UUID, req SmartWithdrawRequest) (parentRef string, totalPot int64, withdrawals []map[string]interface{}, err error) {
 	// Reuse the exact same logic from your http handler
 
 	var accounts []models.SportsAccount
 	if err := db.Preload("Bookie").
-		Where("customer_id = ? AND is_active = ?", customerID, true).
+		Where("sharp_id = ? AND is_active = ?", sharpID, true).
 		Find(&accounts).Error; err != nil {
 		return "", 0, nil, err
 	}
@@ -229,7 +229,7 @@ func ProcessSmartWithdraw(db *gorm.DB, customerID uuid.UUID, req SmartWithdrawRe
 		txn := models.Transaction{
 			ID:              uuid.New(),
 			SportsAccountID: acct.ID,
-			CustomerID:      customerID,
+			SharpID:     sharpID, 
 			Type:            models.TransactionTypeWithdraw,
 			AmountCents:     -amountToWithdraw,
 			IsReal:          req.IsReal,

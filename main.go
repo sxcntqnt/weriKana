@@ -14,23 +14,25 @@ import (
 
 	"weriKana/api/handlers"
 	"weriKana/db"
+	"weriKana/internal/appcontext"
 	"weriKana/internal/bank"
-        "weriKana/internal/bankd"
-        "weriKana/internal/appcontext"
+	"weriKana/internal/bankd"
 	"weriKana/middleware"
 	"weriKana/routes"
+	"weriKana/utils"
 	"weriKana/service/dd_rr"
 	"weriKana/service/keystore"
 	"weriKana/service/mpesa"
 	"weriKana/service/natsAnish"
 	"weriKana/service/otp"
-        "weriKana/service/uzeey"
+	"weriKana/service/uzeey"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/go-redis/redis/v8"
+	"github.com/gofiber/fiber/v2"
 	"github.com/hashicorp/vault/api"
 	"github.com/nats-io/nats.go"
 	"github.com/sirupsen/logrus"
+        "github.com/spf13/viper"
 )
 
 var (
@@ -47,16 +49,13 @@ func main() {
 	// ========================================
 	// 1. Configuration — JWT_SECRET IS DEAD
 	// ========================================
-	_ = getEnv("JWT_SECRET", "") // Just to silence unused warning
+        utils.InitConfig()
 
-	natsURL := getEnv("NATS_URL", nats.DefaultURL)
-	dbURL := getEnv("DATABASE_URL", "postgres://localhost:5432/werikana?sslmode=disable")
-	redisURL := getEnv("REDIS_URL", "redis://localhost:6379/0")
 
 	// ========================================
 	// 2. Core Systems — PERFECT
 	// ========================================
-	database, err := db.Init(dbURL)
+	database, err := db.Init()
 	if err != nil {
 		logger.Fatalf("DB failed: %v", err)
 	}
@@ -67,6 +66,7 @@ func main() {
 	}
 	defer sqlDB.Close() // This closes the *sql.DB, not the GORM instance
 
+        redisURL := viper.GetString("REDIS_URL")
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     parseRedisURL(redisURL),
 		Password: getEnv("REDIS_PASSWORD", ""),
@@ -74,6 +74,7 @@ func main() {
 	})
 	defer redisClient.Close()
 
+        natsURL := viper.GetString("NATS_URL")
 	nc, err := nats.Connect(natsURL,
 		nats.Name("weriKana-api"),
 		nats.ReconnectWait(time.Second),
@@ -157,7 +158,7 @@ func main() {
 		STKCallbackURL: getEnv("MPESA_STK_CALLBACK_URL", "https://yourdomain.com/mpesa/stk-callback"),
 	})
 	mpesa.SetDB(database)
-	natsAnish.StartExecutionConsumer(database,nc)
+	natsAnish.StartExecutionConsumer(database, nc)
 
 	// ========================================
 	// 7. AppContext (Fiber)
@@ -169,13 +170,13 @@ func main() {
 	ctx := &appcontext.AppContext{
 		App:           app,
 		DB:            database,
-		KeyStore:      keyStore,      // ← Your real auth source
+		KeyStore:      keyStore, // ← Your real auth source
 		OTPSvc:        otpSvc,
 		NATS:          nc,
 		SecureBus:     secureConn,
 		BalanceEngine: balanceEngine,
 	}
-        app.Use(middleware.InjectAppContext(ctx))
+	app.Use(middleware.InjectAppContext(ctx))
 	routes.SetupRoutes(ctx)
 
 	// ========================================
@@ -183,8 +184,8 @@ func main() {
 	// ========================================
 	go uzeey.StartStkSequenceConsumer(database, nc)
 	go handlers.StartWithdrawalConsumer(database, nc)
-        go listenForExecutionFills(nc, secureConn)
-        // Start SSH server for partner banks (port 2222)
+	go listenForExecutionFills(nc, secureConn)
+	// Start SSH server for partner banks (port 2222)
 	gitRepoPath := getEnv("GIT_REPO_PATH", "./authorized_keys.git") // Add env for git repo
 	go func() {
 		logger.Info("Starting SSH Bank Bus — :2222")
@@ -208,7 +209,7 @@ func main() {
 	<-stop
 
 	logger.Info("Shutting down — Nairobi style")
-        shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	// Shutdown procedures
 	app.ShutdownWithContext(shutdownCtx)
 	defer cancel()
@@ -216,7 +217,6 @@ func main() {
 	if err := bankd.ShutdownSSH(shutdownCtx); err != nil {
 		logger.Printf("Failed to gracefully shutdown SSH server: %v", err)
 	}
-
 
 	secureConn.Close()
 	balanceEngine.Shutdown()
@@ -297,4 +297,3 @@ func getEnv(key, fallback string) string {
 	}
 	return fallback
 }
-

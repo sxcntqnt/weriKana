@@ -99,7 +99,7 @@ func NewBalanceEngine(db *gorm.DB, redisClient *redis.Client) *BalanceEngine {
 // =====================================================================
 // PUBLIC: GET BALANCE
 // =====================================================================
-func (e *BalanceEngine) GetCustomerBalance(ctx context.Context, customerID uuid.UUID) (*BalanceSummary, error) {
+func (e *BalanceEngine) GetSharpBalance(ctx context.Context, customerID uuid.UUID) (*BalanceSummary, error) {
 	key := fmt.Sprintf(customerCacheKey, customerID)
 
 	if data, err := e.redis.Get(ctx, key).Bytes(); err == nil {
@@ -162,17 +162,27 @@ type balanceUpdater interface {
 	AddFake(int64)
 }
 
+// Updated BalanceEngine method — Aligned with new TransactionLog: SharpID, RealCents/FakeCents/BonusCents.
+// Optional TransactionID param for linking (set if from Transaction; else uuid.New()).
+
 func (e *BalanceEngine) UpdateBalanceAtomic(
 	ctx context.Context,
-	customerID uuid.UUID,
+	sharpID uuid.UUID, // Changed: SharpID replaces customerID
 	accountType AccountType,
 	accountID uuid.UUID,
 	deltaReal, deltaFake int64,
 	reason, ref string,
+	transactionID ...uuid.UUID, // Optional: Link to source Transaction
 ) error {
+	var txID uuid.UUID
+	if len(transactionID) > 0 {
+		txID = transactionID[0]
+	} else {
+		txID = uuid.New() // Generate if not provided
+	}
+
 	err := e.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var updater balanceUpdater
-
 		switch accountType {
 		case Sports:
 			var acc models.SportsAccount
@@ -201,34 +211,33 @@ func (e *BalanceEngine) UpdateBalanceAtomic(
 		default:
 			return fmt.Errorf("unsupported account type: %s", accountType)
 		}
-
 		updater.AddReal(deltaReal)
 		updater.AddFake(deltaFake)
 		if err := tx.Save(updater).Error; err != nil {
 			return err
 		}
-
 		ledger := models.TransactionLog{
 			ID:          uuid.New(),
-			CustomerID:  customerID,
+			SharpID:     sharpID, // Updated: SharpID replaces CustomerID
 			AccountType: string(accountType),
 			AccountID:   accountID,
-			RealCents:   deltaReal,
-			BonusCents:  deltaFake,
+			RealCents:   deltaReal, // Maps to RealCents
+			FakeCents:   deltaFake, // Maps to FakeCents (bonus/simulated)
+			BonusCents:  deltaFake, // If bonus subset of fake; adjust if separate
+			FiatCentsKE: 0,         // Default 0; set if crypto
 			Reference:   ref,
 			Reason:      reason,
 			Status:      "COMPLETED",
 			CreatedAt:   time.Now().UTC(),
+			TransactionID: txID, // Link back to source Transaction (optional)
 		}
 		return tx.Create(&ledger).Error
 	})
-
 	if err == nil {
-		e.invalidateCustomerCache(customerID)
+		e.invalidateCustomerCache(sharpID) // Updated: Use SharpID for cache key
 	}
 	return err
 }
-
 func (e *BalanceEngine) invalidateCustomerCache(customerID uuid.UUID) {
 	key := fmt.Sprintf(customerCacheKey, customerID)
 	ctx, cancel := context.WithTimeout(e.cacheWriteCtx, 2*time.Second)
@@ -240,38 +249,36 @@ func (e *BalanceEngine) invalidateCustomerCache(customerID uuid.UUID) {
 // =====================================================================
 // ADMIN: CURSOR PAGINATION
 // =====================================================================
+// Updated GetAllBalancesPaginated — Aligned with Sharp merge: Queries Sharp IDs; uses GetSharpBalance.
+// Paginate summaries by Sharp ID cursor for admin overviews.
+
 func (e *BalanceEngine) GetAllBalancesPaginated(ctx context.Context, limit int, cursor string) ([]BalanceSummary, string, error) {
 	if limit < 1 || limit > 1000 {
 		limit = 100
 	}
-
 	var ids []uuid.UUID
-	q := e.db.WithContext(ctx).Model(&models.Customer{}).Order("id ASC")
+	q := e.db.WithContext(ctx).Model(&models.Sharp{}).Order("id ASC") // Updated: Model(&models.Sharp{})
 	if cursor != "" {
 		if curID, err := uuid.Parse(cursor); err == nil {
 			q = q.Where("id > ?", curID)
 		}
 	}
-
 	if err := q.Limit(limit+1).Pluck("id", &ids).Error; err != nil {
 		return nil, "", err
 	}
-
 	summaries := make([]BalanceSummary, 0, limit)
 	var nextCursor string
-
 	for i, id := range ids {
 		if i == limit {
 			nextCursor = id.String()
 			break
 		}
-		if bal, err := e.GetCustomerBalance(ctx, id); err == nil {
+		if bal, err := e.GetSharpBalance(ctx, id); err == nil { // Updated: GetSharpBalance replaces GetCustomerBalance
 			summaries = append(summaries, *bal)
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			slog.Error("admin.balance_load_failed", "customer_id", id, "err", err)
+			slog.Error("admin.balance_load_failed", "sharp_id", id, "err", err) // Updated: sharp_id
 		}
 	}
-
 	return summaries, nextCursor, nil
 }
 
@@ -294,26 +301,22 @@ func (e *BalanceEngine) runWarmupController() {
 }
 
 func (e *BalanceEngine) warmupWithNumericID() {
-	type customerIDPair struct {
-		ID        uuid.UUID `gorm:"column:id"`
-		NumericID int64     `gorm:"column:numeric_id"`
+	type sharpIDPair struct {
+		ID       uuid.UUID `gorm:"column:id"`
+		NumericID int64    `gorm:"column:numeric_id"`
 	}
-
 	var lastNumericID int64
-	batchCh := make(chan []customerIDPair, warmupWorkers)
-
+	batchCh := make(chan []sharpIDPair, warmupWorkers)
 	go func() {
 		defer close(batchCh)
 		for {
-			var batch []customerIDPair
-			q := e.db.Model(&models.Customer{}).
+			var batch []sharpIDPair
+			q := e.db.Model(&models.Sharp{}). // Updated: Model(&models.Sharp{})
 				Select("id, numeric_id").
 				Order("numeric_id")
-
 			if lastNumericID > 0 {
 				q = q.Where("numeric_id > ?", lastNumericID)
 			}
-
 			if err := q.Limit(warmupBatchSize).Scan(&batch).Error; err != nil {
 				slog.Error("warmup.scan_failed", "err", err)
 				atomic.AddUint64(&e.warmupFailed, 1)
@@ -322,10 +325,8 @@ func (e *BalanceEngine) warmupWithNumericID() {
 			if len(batch) == 0 {
 				return
 			}
-
 			lastNumericID = batch[len(batch)-1].NumericID
 			atomic.AddUint64(&e.warmupSuccess, uint64(len(batch)))
-
 			select {
 			case batchCh <- batch:
 			case <-e.shutdown:
@@ -333,7 +334,6 @@ func (e *BalanceEngine) warmupWithNumericID() {
 			}
 		}
 	}()
-
 	var wg sync.WaitGroup
 	for i := 0; i < warmupWorkers; i++ {
 		wg.Add(1)
@@ -342,7 +342,7 @@ func (e *BalanceEngine) warmupWithNumericID() {
 			for batch := range batchCh {
 				for _, pair := range batch {
 					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					_, _ = e.GetCustomerBalance(ctx, pair.ID)
+					_, _ = e.GetSharpBalance(ctx, pair.ID) 
 					cancel()
 				}
 			}
@@ -350,36 +350,31 @@ func (e *BalanceEngine) warmupWithNumericID() {
 	}
 	wg.Wait()
 }
-
 // =====================================================================
 // PRIVATE: DB COMPUTE + AGGREGATION
 // =====================================================================
-func (e *BalanceEngine) computeFromDB(ctx context.Context, customerID uuid.UUID) (*BalanceSummary, error) {
+func (e *BalanceEngine) computeFromDB(ctx context.Context, sharpID uuid.UUID) (*BalanceSummary, error) { // Updated: sharpID replaces customerID
 	var nexus models.AssetNexus
 	err := e.db.WithContext(ctx).
-		Preload("Customer").
+		Preload("Sharp"). // Updated: Preload("Sharp") replaces "Customer"
 		Preload("SportsAccounts", "deleted_at IS NULL").
 		Preload("StockAccounts", "deleted_at IS NULL").
 		Preload("ForexAccounts", "deleted_at IS NULL").
 		Preload("CryptoAccounts", "deleted_at IS NULL").
-		First(&nexus, "customer_id = ?", customerID).Error
-
+		First(&nexus, "sharp_id = ?", sharpID).Error // Updated: "sharp_id = ?" replaces "customer_id = ?"
 	if err != nil {
 		return nil, err
 	}
-
 	summary := &BalanceSummary{
-		CustomerID:   customerID,
-		CustomerName: nexus.Customer.Name,
-		UpdatedAt:    time.Now().UTC(),
-		ByVertical:   make([]VerticalBalance, 0, 4),
+		CustomerID:    sharpID, // Updated: Use sharpID (or rename field to SharpID in summary)
+		CustomerName:  nexus.Sharp.Name, // Updated: nexus.Sharp.Name replaces nexus.Customer.Name
+		UpdatedAt:     time.Now().UTC(),
+		ByVertical:    make([]VerticalBalance, 0, 4),
 	}
-
 	e.aggregateVertical(summary, "Sports", nexus.SportsAccounts)
 	e.aggregateVertical(summary, "Stocks", nexus.StockAccounts)
 	e.aggregateVertical(summary, "Forex", nexus.ForexAccounts)
 	e.aggregateVertical(summary, "Crypto", nexus.CryptoAccounts)
-
 	return summary, nil
 }
 

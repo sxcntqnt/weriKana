@@ -4,26 +4,32 @@ import (
 	"database/sql/driver"
 	"encoding/json"
         "github.com/google/uuid"
+        "fmt"
 )
 
 // JSONMap is a convenience type for GORM JSON columns
-type JSONMap map[string]any
+type JSONMap map[string]interface{}
 
-// Scan implements sql.Scanner
-func (j *JSONMap) Scan(value interface{}) error {
-	if value == nil {
-		*j = nil
-		return nil
-	}
-	return json.Unmarshal(value.([]byte), j)
+// Value implements Valuer for SQL serialization.
+func (j JSONMap) Value() (driver.Value, error) {
+        if len(j) == 0 {
+                return nil, nil
+        }
+        b, err := json.Marshal(j)
+        return string(b), err
 }
 
-// Value implements driver.Valuer
-func (j JSONMap) Value() (driver.Value, error) {
-	if j == nil {
-		return nil, nil
-	}
-	return json.Marshal(j)
+// Scan implements Scanner for SQL deserialization.
+func (j *JSONMap) Scan(value interface{}) error {
+        if value == nil {
+                *j = nil
+                return nil
+        }
+        b, ok := value.([]byte)
+        if !ok {
+                return fmt.Errorf("JSONMap: cannot scan []byte")
+        }
+        return json.Unmarshal(b, j)
 }
 
 type AllocationResult struct {

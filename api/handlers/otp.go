@@ -29,7 +29,7 @@ func RequestWithdrawOTP(db *gorm.DB, otpSvc *otp.Service) fiber.Handler {
 		}
 
 		// Verify customer exists
-		var customer models.Customer
+		var customer models.Sharp
 		if err := db.Select("id").First(&customer, "id = ?", req.CustomerID).Error; err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 				"error": "Customer not found",

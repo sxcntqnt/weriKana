@@ -22,7 +22,7 @@ func SmartWithdraw(db *gorm.DB, keyStore *keystore.KeyStore, nc any) fiber.Handl
 	realHandler := dd_rr.SmartWithdraw(db, *keyStore, otp.GetService())
 
 	return func(c *fiber.Ctx) error {
-		customerID := c.Locals("user_id").(uuid.UUID)
+		sharpID := c.Locals("user_id").(uuid.UUID)
 
 		var req struct {
 			OTP       string `json:"otp"`
@@ -40,7 +40,7 @@ func SmartWithdraw(db *gorm.DB, keyStore *keystore.KeyStore, nc any) fiber.Handl
 
 		// Build request exactly as your dd_rr handler expects
 		ddrrReq := dd_rr.SmartWithdrawRequest{
-			CustomerID: customerID.String(),
+			SharpID: sharpID.String(),
 			OTP:        req.OTP,
 			Amount:     req.Amount,
 			Signature:  req.Signature,

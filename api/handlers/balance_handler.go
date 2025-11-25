@@ -31,7 +31,7 @@ func (h *BalanceHandler) GetMyBalance(c *fiber.Ctx) error {
 		})
 	}
 
-	bal, err := h.engine.GetCustomerBalance(c.Context(), customerID)
+	bal, err := h.engine.GetSharpBalance(c.Context(), customerID)
 	if err != nil {
 		// FIXED: proper error inspection instead of fragile string comparison
 		if errors.Is(err, gorm.ErrRecordNotFound) {

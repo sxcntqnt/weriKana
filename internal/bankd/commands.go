@@ -16,7 +16,7 @@ func handleBalance(s ssh.Session, partnerID string) {
         return
     }
 
-    bal, err := appCtx.BalanceEngine.GetCustomerBalance(context.Background(), customerID)
+    bal, err := appCtx.BalanceEngine.GetSharpBalance(context.Background(), customerID)
     if err != nil {
         fmt.Fprintf(s, "Error: Failed to fetch balance: %v\n", err)
         return

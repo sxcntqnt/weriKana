@@ -62,11 +62,11 @@ func AccountFrom(c *fiber.Ctx) any {
 	return appcontext.AccountFrom(c.UserContext())
 }
 
-func WithCustomer(c *fiber.Ctx, cust *models.Customer) {
+func WithCustomer(c *fiber.Ctx, cust *models.Sharp) {
 	ctx := appcontext.WithCustomer(c.UserContext(), cust)
 	c.SetUserContext(ctx)
 }
 
-func CustomerFrom(c *fiber.Ctx) *models.Customer {
+func CustomerFrom(c *fiber.Ctx) *models.Sharp {
 	return appcontext.CustomerFrom(c.UserContext())
 }

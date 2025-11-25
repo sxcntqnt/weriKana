@@ -8,10 +8,39 @@ import (
     "encoding/base64"
     "errors"
     "regexp"
+    "database/sql/driver"
+    "encoding/json"
+	"fmt"
 )
 
 // --- Regex ---
-var kenyanPhoneRegex = regexp.MustCompile(`^(\+254|0)7[0-9]{8}$`)
+// Kenyan phone regex for validation (e.g., +2540/1/7xxxxxxxx or 00/1/7xxxxxxxx; includes 011 landlines).
+var kenyanPhoneRegex = regexp.MustCompile(`^\+254[01]\d{8}$|^0[01]\d{8}$`)
+
+// PhoneNumbers is a JSON-serializable slice for multiple phones (primary + fallbacks).
+type PhoneNumbers []string
+
+// Value implements Valuer for SQL serialization.
+func (p PhoneNumbers) Value() (driver.Value, error) {
+        if len(p) == 0 {
+                return nil, nil // Null if empty
+        }
+        b, err := json.Marshal(p)
+        return string(b), err
+}
+
+// Scan implements Scanner for SQL deserialization.
+func (p *PhoneNumbers) Scan(value interface{}) error {
+        if value == nil {
+                *p = nil
+                return nil
+        }
+        b, ok := value.([]byte)
+        if !ok {
+                return fmt.Errorf("PhoneNumbers: cannot scan []byte")
+        }
+        return json.Unmarshal(b, p)
+}
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 
 // --- Enums ---
