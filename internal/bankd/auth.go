@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/gliderlabs/ssh"
+
 )
 
 type contextKey string
@@ -162,3 +163,5 @@ func shortHex(b []byte) string {
 	}
 	return hexs
 }
+
+// MkHostname generates
