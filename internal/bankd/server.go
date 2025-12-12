@@ -12,12 +12,12 @@ import (
 )
 
 var (
-	appCtx     *appcontext.AppContext
-	server     *ssh.Server
-	serverMu   sync.Mutex
+	appCtx   *appcontext.AppContext
+	server   *ssh.Server
+	serverMu sync.Mutex
 )
 
-// StartSSHServer starts the SSH server with git-backed authorized keys
+// StartSSHServer starts the SSH server with git-backed authorized keys.
 func StartSSHServer(ctx *appcontext.AppContext, gitRepoPath string) error {
 	serverMu.Lock()
 	defer serverMu.Unlock()
@@ -26,10 +26,10 @@ func StartSSHServer(ctx *appcontext.AppContext, gitRepoPath string) error {
 	gitAuth := NewGitAuthorizedKeys(gitRepoPath)
 
 	server = &ssh.Server{
-		Addr: ":2222",
-		Handler: SSHHandler,
-		PublicKeyHandler: PublicKeyAuthHandler(gitAuth),
-		PasswordHandler:  PasswordAuthHandler,
+		Addr:             ":2222",
+		Handler:          SSHHandler,                     // main session handler
+		PublicKeyHandler: PublicKeyAuthHandler(gitAuth), // git-backed keys
+		PasswordHandler:  PasswordAuthHandler,           // password auth
 		SubsystemHandlers: map[string]ssh.SubsystemHandler{
 			"env": EnvSubsystemHandler,
 		},
@@ -41,7 +41,7 @@ func StartSSHServer(ctx *appcontext.AppContext, gitRepoPath string) error {
 		log.Printf("Warning: Failed to pull git repo on startup: %v", err)
 	}
 
-	// ListenAndServe is blocking, wrap it in a goroutine if needed
+	// Run server in goroutine (ListenAndServe is blocking)
 	go func() {
 		if err := server.ListenAndServe(); err != nil {
 			log.Printf("SSH server stopped: %v", err)
@@ -51,13 +51,13 @@ func StartSSHServer(ctx *appcontext.AppContext, gitRepoPath string) error {
 	return nil
 }
 
-// ShutdownSSH gracefully stops the SSH server
+// ShutdownSSH gracefully stops the SSH server.
 func ShutdownSSH(ctx context.Context) error {
 	serverMu.Lock()
 	defer serverMu.Unlock()
 
 	if server == nil {
-		return nil // already stopped
+		return nil
 	}
 
 	done := make(chan struct{})
@@ -68,7 +68,7 @@ func ShutdownSSH(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err() // timeout or cancellation
+		return ctx.Err()
 	case <-done:
 		server = nil
 		return nil

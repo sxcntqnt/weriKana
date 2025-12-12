@@ -1,7 +1,6 @@
 package db
 
 import (
-	"crypto/rand"
 	"log"
 	"os"
 	"strings"
@@ -20,7 +19,6 @@ const MasterKeyPath = ".master_key"
 
 var DB *gorm.DB
 
-// Init initializes the database connection and runs all migrations/constraints.
 // Init initializes the database connection and runs all migrations/constraints.
 func Init() (*gorm.DB, error) {
 	// Determine environment (Viper first, fallback OS)
@@ -187,30 +185,7 @@ func Init() (*gorm.DB, error) {
 		log.Printf("Warning: master_key table creation failed: %v", err)
 	}
 	// === 5. Seed master encryption key ===
-	LoadOrGenerateMasterKey()
 	log.Println("Database initialized & migrated successfully")
 	DB = db
 	return db, nil
 }
-// LoadOrGenerateMasterKey loads from disk or generates + saves a new 32-byte AES key
-// Returns the key bytes — never fails (panics on critical errors)
-func LoadOrGenerateMasterKey() []byte {
-	key, err := os.ReadFile(MasterKeyPath)
-	if err != nil || len(key) != 32 {
-		log.Println("No valid master key found — generating new one...")
-		key = make([]byte, 32) // 256-bit AES key
-		if _, err := rand.Read(key); err != nil {
-			log.Fatalf("FATAL: Cannot generate master key: %v", err)
-		}
-		if err := os.WriteFile(MasterKeyPath, key, 0600); err != nil {
-			log.Fatalf("FATAL: Cannot save master key to %s: %v", MasterKeyPath, err)
-		}
-		log.Println("New 32-byte master encryption key generated and saved to", MasterKeyPath)
-		log.Println("BACK IT UP SECURELY NOW — losing this file = permanent data loss!")
-	} else {
-		log.Println("Master encryption key loaded from", MasterKeyPath)
-	}
-	return key
-}
-
-

@@ -12,6 +12,7 @@ require (
 	github.com/goremit/money-transfer v0.0.0-20220508151611-59ae01b9b2ed
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/vault/api v1.22.0
+	github.com/mattn/go-colorable v0.1.14
 	github.com/nats-io/nats.go v1.47.0
 	github.com/shopspring/decimal v1.4.0
 	github.com/sirupsen/logrus v1.9.3
@@ -57,7 +58,6 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
-	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect

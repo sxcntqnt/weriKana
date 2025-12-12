@@ -3,7 +3,9 @@ package utils
 import (
 	"log"
 
+	"weriKana/service/keystore"
 	"github.com/spf13/viper"
+
 )
 
 // InitConfig loads environment variables using Viper.
@@ -25,3 +27,14 @@ func InitConfig() {
 	}
 }
 
+
+func AESMasterKey() []byte {
+	if len(keystore.AESMasterKey) != 32 {
+		panic("AESMasterKey not initialized! Did you call masterkey.Init()?")
+	}
+	return keystore.AESMasterKey
+}
+
+func IdentityPublicB64() string {
+	return keystore.IdentityPubB64
+}
